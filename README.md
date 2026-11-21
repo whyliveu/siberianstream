@@ -31,3 +31,8 @@ Manrope распространяется по SIL Open Font License; полны�
 ## Запасной хостинг GitHub Pages
 
 Один раз включить: Settings → Pages → Build and deployment → Source: GitHub Actions. Workflow `Publish backup invitation` публикует `dist` через `scripts/build-pages.py`, адаптируя пути и Open Graph к адресу GitHub Pages. Cloudflare продолжает работать независимо. Если первый запуск прошёл до включения Pages, после включения повторить workflow. Перед тем как раздавать новый адрес, проверить доступ из сети зрителей и Telegram-превью.
+
+
+## Telegram-напоминания
+
+Бот: https://t.me/mashkasad_streambot . Код и автоматическое подключение подготовлены; для активации нужен один секрет `TELEGRAM_BOT_TOKEN` в Cloudflare. Пошаговое подключение и ограничения доставки: [TELEGRAM.md](TELEGRAM.md). Проверки: `node --test tests/bot.test.mjs`. Кнопку на сайте включать только после проверки настоящей подписки.

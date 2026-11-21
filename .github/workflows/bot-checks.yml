@@ -1,0 +1,18 @@
+name: Check Telegram bot
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'wrangler.jsonc', '.github/workflows/bot-checks.yml']
+  pull_request:
+    paths: ['src/**', 'tests/**', 'wrangler.jsonc', '.github/workflows/bot-checks.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tests/bot.test.mjs
