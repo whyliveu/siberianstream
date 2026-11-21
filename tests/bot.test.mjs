@@ -49,6 +49,7 @@ try{
  await storage.put('sub:700',{chatId:700,subscribedAt:REMINDER-1,lastUpdate:1,day:'sent',live:'pending'});outcome='blocked';await bot.tick();assert.equal(await storage.get('sub:700'),undefined,'blocked chat is removed');outcome='ok';
  const restarted=new StreamBot({storage},env);const restartCount=sent.length;await restarted.update({id:7,chatId:5,text:'/start'});await restarted.tick();assert.equal(sent.length,restartCount,'ledger survives an object restart');
  stream={state:'ended',joinUrl:null};now+=11000;await storage.delete('stream-status');await bot.tick();const endedCount=sent.length;await bot.tick();assert.equal(sent.length,endedCount);
+ now=START+7*3600000;stream={state:'live',joinUrl:'https://meet.google.com/abc-defg-hij'};await storage.delete('stream-status');await storage.put('sub:900',{chatId:900,subscribedAt:REMINDER-1,lastUpdate:1,day:'sent',live:'pending'});const lateCount=sent.length;await bot.tick();assert.equal(sent.length,lateCount,'stale live flag cannot notify people after the event window');
  now=START+11*86400000;await bot.tick();assert.equal(storage.values.size,0,'personal data expires');
  assert(validMeet('https://meet.google.com/abc-defg-hij'));assert(!validMeet('https://meet.google.com.evil.test/abc-defg-hij'));
  console.log('PASS: protected webhook, body limit, private-chat consent, restart-safe dedup, scheduled reminder, late subscription, verified live link, unsubscribe, retry, ambiguous-send suppression, batch continuation, data expiry and automatic setup.');

@@ -119,6 +119,7 @@ export class StreamBot {
  }
  async tick(){
   const now=Date.now();if(now>EXPIRES){await this.ctx.storage.deleteAll();return;}
+  if(now>START+6*3600000)return;
   const stopped=await this.ctx.storage.list({prefix:'stop:'});for(const [key,value]of stopped)if(value.at<now-86400000)await this.ctx.storage.delete(key);
   const subscriptions=await this.ctx.storage.list({prefix:'sub:'});if(!subscriptions.size)return;
   let status;try{status=await this.status();}catch{await this.ctx.storage.setAlarm(now+60000);return;}
