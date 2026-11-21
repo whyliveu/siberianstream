@@ -2,8 +2,8 @@
 
 ## Original photographs
 
-- NiKa and Sayan: https://kuzbass85.ru/2026/01/13/kuzbasskaya-brejk-mashina/ — original photograph credited to the trainer's personal archive. Local file: dist/assets/nika-sayan-original-v1.jpg. Both portraits use the same unmodified photo with separate CSS crops.
-- Anton Gladkov: original published video thumbnail for the interview “Вайбкодинг — единственное спасение в мире который захватит ИИ. Антон Гладков”, Honey Montana: https://www.youtube.com/watch?v=mv85jCfFSLw . Local file: dist/assets/anton-interview-original-v1.jpg. Face framed with CSS; no generated portraits.
+- Sayan: https://kuzbass85.ru/2026/01/13/kuzbasskaya-brejk-mashina/ — original photograph credited to the trainer's personal archive. Local file: dist/assets/nika-sayan-original-v1.jpg. Sayan's portrait uses this photograph with a CSS crop.
+- NiKa and Anton Gladkov: replacement photographs supplied by Maria on 2026-11-22. Local files: dist/assets/nika-portrait-v2.jpg and dist/assets/anton-portrait-v2.jpg. Optimized JPEGs of the supplied photographs, framed as circular avatars with CSS. Anton is the person on the right in the supplied group photo. No generated portraits.
 
 ## Facts checked on 2026-11-22
 
