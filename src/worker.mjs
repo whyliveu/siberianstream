@@ -3,23 +3,23 @@ export const START = Date.parse('2026-11-27T17:00:00+03:00');
 export const REMINDER = START - 86400000;
 export const HOUR_REMINDER = START - 3600000;
 const DAY_REMINDER_END = Date.parse('2026-11-27T00:00:00+03:00');
-const PROFILE_VERSION = 'star-27nov-v1';
+const PROFILE_VERSION = 'youtube-27nov-v2';
 const DONATION_URL = 'https://www.donationalerts.com/r/mashkasad';
 const MESSAGE_MEDIA = {welcome:'/assets/tg-stream-date-v1.jpg',day:'/assets/tg-stream-day-v1.jpg',hour:'/assets/tg-stream-hour-v1.jpg',live:'/assets/tg-stream-live-v1.jpg'};
 const MEDIA_VERSION = 'photo-cards-v1';
 export const COPY = {
  day: 'Йоу! Завтра, <b>27 ноября в 17:00 по МСК</b>, встречаемся на Сибирском стриме с Никой, Саяном и Антоном Гладковым.\n\nБудем расспрашивать про брейк и эту морозную хип-хоп-культуру)\n\nКстати, в лайве выберем <b>три самых интересных вопроса</b>. Их авторам доставим домой <b>футболки In Da Motion с росписью Ники и Саяна</b>. Так что готовь вопросы)\n\nЗавтра связь!',
- hour: 'Йоу, <b>начинаем через час!</b>\n\nСегодня, <b>27 ноября в 17:00 по МСК</b>, — Сибирский стрим с Никой, Саяном и Антоном Гладковым.\n\nГотовь вопросы, скоро пришлю ссылку в комнату)',
- live: 'Йоу, <b>мы начали!</b>\n\nНика, Саян, Антон и я уже в комнате. Залетай)\n\nКамеру и микрофон оставь выключенными, а вопросы кидай в чат. Авторам трёх самых интересных — футболки с росписью Ники и Саяна!'
+ hour: 'Йоу, <b>начинаем через час!</b>\n\nСегодня, <b>27 ноября в 17:00 по МСК</b>, — Сибирский стрим с Никой, Саяном и Антоном Гладковым.\n\nГотовь вопросы и открывай YouTube по кнопке ниже)',
+ live: 'Йоу, <b>мы начали!</b>\n\nНика, Саян, Антон и я уже в эфире на YouTube. Залетай)\n\nВопросы кидай в чат трансляции. Авторам трёх самых интересных — футболки с росписью Ники и Саяна!'
 };
 export function welcomeText(now) {
- const plan=now<REMINDER?'Шарик крутится быстро, поэтому пришлю тебе напоминание за день и за час до начала стрима, окей?':now<HOUR_REMINDER?'Шарик крутится быстро, поэтому пришлю тебе напоминание за час до начала стрима, окей?':'Уже скоро начинаем! Пришлю ссылку в комнату, когда стартуем.';
- return 'Йоу! Проведём <b>Сибирский стрим</b> с Никой, Саяном и Антоном Гладковым <b>27 ноября в 17:00 по МСК</b>.\n\n'+plan+'\n\nСвязь)\n\np.s. можешь задонатить любовью в рублях <a href="'+DONATION_URL+'">вот тут</a>)\n\nОтписаться — /stop.';
+ const plan=now<REMINDER?'Шарик крутится быстро, поэтому пришлю тебе напоминание за день и за час до начала стрима, окей?':now<HOUR_REMINDER?'Шарик крутится быстро, поэтому пришлю тебе напоминание за час до начала стрима, окей?':'Уже скоро начинаем! Ссылка на YouTube — по кнопке ниже. Напишу, когда стартуем.';
+ return 'Йоу! Проведём <b>Сибирский стрим</b> с Никой, Саяном и Антоном Гладковым <b>27 ноября в 17:00 по МСК</b>.\n\n'+plan+'\n\nСмотреть будем на YouTube, вопросы — в чат трансляции. Ссылка по кнопке ниже.\n\nСвязь)\n\np.s. можешь задонатить любовью в рублях <a href="'+DONATION_URL+'">вот тут</a>)\n\nОтписаться — /stop.';
 }
 const EXPIRES = START + 10 * 86400000;
-const DEFAULT_SITE = 'https://whyliveu.github.io/siberianstream/';
+const DEFAULT_SITE = 'https://mashkasad.online/';
 const json = (value, status = 200) => Response.json(value, {status, headers: {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
-export const validMeet = value => typeof value === 'string' && /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(value);
+export const validStreamUrl = value => typeof value === 'string' && /^https:\/\/(?:(?:www\.)?youtube\.com\/(?:live\/[A-Za-z0-9_-]{11}|watch\?v=[A-Za-z0-9_-]{11})|youtu\.be\/[A-Za-z0-9_-]{11})$/.test(value);
 export async function webhookSecret(token) {
  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('siberianstream-webhook-v1:'+token));
  return Array.from(new Uint8Array(hash), n => n.toString(16).padStart(2,'0')).join('');
@@ -110,12 +110,12 @@ export class StreamBot {
  async status(){
   const cached=await this.ctx.storage.get('stream-status');if(cached?.at>Date.now()-10000)return cached.value;
   const r=await fetch(this.env.STATUS_URL,{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw new Error('status_unavailable');
-  const value=await r.json();if(!['waiting','live','ended'].includes(value.state)||(value.state==='live'&&!validMeet(value.joinUrl)))throw new Error('invalid_stream_status');
+  const value=await r.json();if(!['waiting','live','ended'].includes(value.state)||(value.state==='live'&&!validStreamUrl(value.joinUrl))||(value.joinUrl!=null&&!validStreamUrl(value.joinUrl)))throw new Error('invalid_stream_status');
   await this.ctx.storage.put('stream-status',{at:Date.now(),value});return value;
  }
  async send(chatId,text,joinUrl,support=false,mediaKind=null){
   const site=this.env.SITE_URL||DEFAULT_SITE;
-  const buttons=[[{text:joinUrl?'Подключиться к стриму':'Открыть приглашение',url:joinUrl||site}]];
+  const buttons=[[{text:joinUrl?'Смотреть на YouTube':'Открыть приглашение',url:joinUrl||site}]];
   if(support)buttons.push([{text:'Поддержать любовью в рублях',url:DONATION_URL}]);
   const path=MESSAGE_MEDIA[mediaKind];
   if(path&&text.length<=1024){
@@ -158,8 +158,8 @@ export class StreamBot {
   const sub={chatId:input.chatId,subscribedAt:old?.subscribedAt||now,lastUpdate:input.id,lastAction:now,day:old?.day||'pending',hour:old?.hour||'pending',live:old?.live||'pending'};
   if(status.state==='live')sub.live='sent';
   await this.ctx.storage.put(key,sub);await this.ctx.storage.delete('stop:'+input.chatId);
-  const text=status.state==='live'?'Мы уже в эфире! Ника, Саян, Антон и я — в комнате. Залетай с выключенными камерой и микрофоном) Вопросы — в чат.':welcomeText(now);
-  const result=await this.send(input.chatId,text,status.state==='live'?status.joinUrl:undefined,status.state!=='live',status.state==='live'?'live':'welcome');
+  const text=status.state==='live'?'Мы уже в эфире на YouTube! Ника, Саян, Антон и я — на связи. Залетай) Вопросы — в чат трансляции.':welcomeText(now);
+  const result=await this.send(input.chatId,text,status.joinUrl,status.state!=='live',status.state==='live'?'live':'welcome');
   if(result.blocked)await this.ctx.storage.delete(key);
   return json({ok:true});
  }
@@ -180,7 +180,7 @@ export class StreamBot {
    count++;
    // Claim before the external send. An ambiguous timeout stays uncertain rather than sending twice.
    sub[kind]='sending';await this.ctx.storage.put(key,sub);
-   const result=await this.send(sub.chatId,COPY[kind],kind==='live'?status.joinUrl:undefined,false,kind);
+   const result=await this.send(sub.chatId,COPY[kind],status.joinUrl,false,kind);
    if(result.blocked){await this.ctx.storage.delete(key);continue;}
    if(result.ok){sub[kind]='sent';delete sub.retryAt;}
    else if(result.uncertain){sub[kind]='uncertain';}

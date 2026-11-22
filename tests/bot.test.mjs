@@ -1,5 +1,5 @@
 import {strict as assert} from 'node:assert';
-import worker,{StreamBot,START,REMINDER,HOUR_REMINDER,webhookSecret,validMeet,welcomeText} from '../src/worker.mjs';
+import worker,{StreamBot,START,REMINDER,HOUR_REMINDER,webhookSecret,validStreamUrl,welcomeText} from '../src/worker.mjs';
 class Storage {
  constructor(){this.values=new Map();this.alarm=null;}
  async get(k){return structuredClone(this.values.get(k));}
@@ -10,7 +10,7 @@ class Storage {
  async deleteAll(){this.values.clear();}
 }
 const realNow=Date.now,realFetch=globalThis.fetch;
-let now=REMINDER-3600000,stream={state:'waiting',joinUrl:null},sent=[],outcome='ok',registration=0,profileUploads=0,avatarFailure=false,photoUploads=0,assetFailure=false;
+let now=REMINDER-3600000,stream={state:'waiting',joinUrl:'https://youtube.com/live/L5wjyA52hyE'},sent=[],outcome='ok',registration=0,profileUploads=0,avatarFailure=false,photoUploads=0,assetFailure=false;
 Date.now=()=>now;
 globalThis.fetch=async(url,options)=>{
  if(/\/(sendMessage|sendPhoto)$/.test(String(url))){const multipart=options.body instanceof FormData;const raw=multipart?Object.fromEntries(options.body):JSON.parse(options.body);const body={...raw,text:raw.text??raw.caption,reply_markup:typeof raw.reply_markup==='string'?JSON.parse(raw.reply_markup):raw.reply_markup,method:String(url).endsWith('/sendPhoto')?'sendPhoto':'sendMessage',multipart};sent.push(body);if(body.method==='sendPhoto'){assert(body.caption.length<=1024);if(multipart){assert(raw.photo instanceof Blob);assert.equal(options.headers,undefined);photoUploads++;}}
@@ -37,14 +37,16 @@ try{
  await webhook({update_id:1,message:{chat:{id:1,type:'private'},text:'/start sibirskiy-strim-2026-11-27'}});
  assert.equal(sent.length,1);assert((await storage.get('sub:1')).subscribedAt<REMINDER);
  assert(sent[0].text.includes('Шарик крутится быстро'));assert(sent[0].text.includes('за день и за час'));assert.equal(sent[0].parse_mode,'HTML');assert.equal(sent[0].reply_markup.inline_keyboard[1][0].url,'https://www.donationalerts.com/r/mashkasad');
+ assert.equal(sent[0].reply_markup.inline_keyboard[0][0].url,stream.joinUrl);assert.equal(sent[0].reply_markup.inline_keyboard[0][0].text,'Смотреть на YouTube');
  assert.equal(sent[0].method,'sendPhoto');assert(sent[0].multipart,'first cover uploaded with caption and buttons');
  await update(1);assert.equal(sent.length,1,'duplicate webhook suppressed');
  await webhook({update_id:2,message:{chat:{id:50,type:'group'},text:'/start'}});assert.equal(await storage.get('sub:50'),undefined);
  const oversize=await worker.fetch(new Request('https://example.org/api/telegram/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':secret},body:'x'.repeat(20000)}),env);assert.equal(oversize.status,400);
- now=REMINDER;await bot.tick();assert.equal(sent.length,2);assert(sent[1].text.includes('Завтра'));assert(sent[1].text.includes('доставим домой'));await bot.tick();assert.equal(sent.length,2);
+ const preLive=sent.length;await bot.tick();assert.equal(sent.length,preLive,'publishing a waiting YouTube URL does not send a live alert');
+ now=REMINDER;await bot.tick();assert.equal(sent.length,2);assert(sent[1].text.includes('Завтра'));assert.equal(sent[1].reply_markup.inline_keyboard[0][0].url,stream.joinUrl);assert(sent[1].text.includes('доставим домой'));await bot.tick();assert.equal(sent.length,2);
  now+=4000;await update(3,2);assert.equal(sent.length,3);await bot.tick();assert.equal(sent.length,3,'late subscribers do not receive yesterday-style reminders');
  now=START-60000;stream={state:'live',joinUrl:'https://evil.example/'};await storage.delete('stream-status');await bot.tick();assert.equal(sent.length,3,'invalid room URL fails closed');
- now=START+1000;stream={state:'live',joinUrl:'https://meet.google.com/abc-defg-hij'};await storage.delete('stream-status');await bot.tick();assert.equal(sent.length,5);assert.equal(sent[4].reply_markup.inline_keyboard[0][0].url,stream.joinUrl);await bot.tick();assert.equal(sent.length,5);
+ now=START+1000;stream={state:'live',joinUrl:'https://youtube.com/live/L5wjyA52hyE'};await storage.delete('stream-status');await bot.tick();assert.equal(sent.length,5);assert.equal(sent[4].reply_markup.inline_keyboard[0][0].url,stream.joinUrl);await bot.tick();assert.equal(sent.length,5);
  await update(4,3);assert(sent.at(-1).text.startsWith('Мы уже'));await bot.tick();assert.equal(sent.length,6,'late live join is not notified twice');
  await update(5,1,'/stop');assert.equal(await storage.get('sub:1'),undefined);const stoppedCount=sent.length;await update(5,1,'/stop');await update(4,1);assert.equal(sent.length,stoppedCount,'duplicate and delayed updates cannot reverse unsubscribe');
  now+=4000;await update(6,4);outcome='retry';const sub=await storage.get('sub:4');sub.live='pending';await storage.put('sub:4',sub);await bot.tick();assert.equal((await storage.get('sub:4')).live,'pending');assert(storage.alarm>now);outcome='ok';now+=11000;await bot.tick();assert.equal((await storage.get('sub:4')).live,'sent');
@@ -54,20 +56,20 @@ try{
  const before=sent.length;await bot.tick();assert.equal(sent.length-before,15);await bot.alarm();assert.equal(sent.length-before,17);
  await storage.put('sub:700',{chatId:700,subscribedAt:REMINDER-1,lastUpdate:1,day:'sent',live:'pending'});outcome='blocked';await bot.tick();assert.equal(await storage.get('sub:700'),undefined,'blocked chat is removed');outcome='ok';
  const restarted=new StreamBot({storage},env);const restartCount=sent.length;await restarted.update({id:7,chatId:5,text:'/start'});await restarted.tick();assert.equal(sent.length,restartCount,'ledger survives an object restart');
- stream={state:'ended',joinUrl:null};now+=11000;await storage.delete('stream-status');await bot.tick();const endedCount=sent.length;await bot.tick();assert.equal(sent.length,endedCount);
- now=START+7*3600000;stream={state:'live',joinUrl:'https://meet.google.com/abc-defg-hij'};await storage.delete('stream-status');await storage.put('sub:900',{chatId:900,subscribedAt:REMINDER-1,lastUpdate:1,day:'sent',live:'pending'});const lateCount=sent.length;await bot.tick();assert.equal(sent.length,lateCount,'stale live flag cannot notify people after the event window');
+ stream={state:'ended',joinUrl:'https://youtube.com/live/L5wjyA52hyE'};now+=11000;await storage.delete('stream-status');await bot.tick();const endedCount=sent.length;await bot.tick();assert.equal(sent.length,endedCount);
+ now=START+7*3600000;stream={state:'live',joinUrl:'https://youtube.com/live/L5wjyA52hyE'};await storage.delete('stream-status');await storage.put('sub:900',{chatId:900,subscribedAt:REMINDER-1,lastUpdate:1,day:'sent',live:'pending'});const lateCount=sent.length;await bot.tick();assert.equal(sent.length,lateCount,'stale live flag cannot notify people after the event window');
  now=START+11*86400000;await bot.tick();assert.equal(storage.values.size,0,'personal data expires');
  // Existing subscribers have no hour field: they still get exactly one hour reminder.
  const hourlyStorage=new Storage(),hourlyBot=new StreamBot({storage:hourlyStorage},env);
- now=HOUR_REMINDER-1;stream={state:'waiting',joinUrl:null};
+ now=HOUR_REMINDER-1;stream={state:'waiting',joinUrl:'https://youtube.com/live/L5wjyA52hyE'};
  await hourlyStorage.put('sub:1',{chatId:1,subscribedAt:REMINDER-1,day:'pending',live:'pending',lastUpdate:1});
  const beforeHour=sent.length;await hourlyBot.tick();assert.equal(sent.length,beforeHour,'not sent early, and no stale tomorrow message on event day');
- now=HOUR_REMINDER;await hourlyStorage.delete('stream-status');await hourlyBot.tick();assert.equal(sent.length,beforeHour+1);assert(sent.at(-1).text.includes('через час'));assert.equal((await hourlyStorage.get('sub:1')).hour,'sent');
+ now=HOUR_REMINDER;await hourlyStorage.delete('stream-status');await hourlyBot.tick();assert.equal(sent.length,beforeHour+1);assert(sent.at(-1).text.includes('через час'));assert.equal(sent.at(-1).reply_markup.inline_keyboard[0][0].url,stream.joinUrl);assert.equal((await hourlyStorage.get('sub:1')).hour,'sent');
  await new StreamBot({storage:hourlyStorage},env).tick();assert.equal(sent.length,beforeHour+1,'hour reminder survives restart without duplication');
- now+=4000;await hourlyBot.update({id:50,chatId:2,text:'/start'});assert(!sent.at(-1).text.includes('напоминание за час'));assert(sent.at(-1).text.includes('ссылку в комнату'));const afterLateStart=sent.length;await hourlyBot.tick();assert.equal(sent.length,afterLateStart,'late start does not get old hour reminder');
+ now+=4000;await hourlyBot.update({id:50,chatId:2,text:'/start'});assert(!sent.at(-1).text.includes('напоминание за час'));assert(sent.at(-1).text.includes('Ссылка на YouTube'));const afterLateStart=sent.length;await hourlyBot.tick();assert.equal(sent.length,afterLateStart,'late start does not get old hour reminder');
  assert(!welcomeText(REMINDER+1).includes('за день и за час'));assert(welcomeText(REMINDER+1).includes('напоминание за час'));assert(!welcomeText(HOUR_REMINDER+1).includes('напоминание за час'));
  now=START;await hourlyStorage.delete('stream-status');await hourlyStorage.put('sub:3',{chatId:3,subscribedAt:REMINDER-1,day:'pending',hour:'pending',live:'pending'});await hourlyBot.tick();assert.equal(sent.length,afterLateStart,'no hour reminder after scheduled start');
- now=REMINDER;stream={state:'waiting',joinUrl:null};avatarFailure=true;
+ now=REMINDER;stream={state:'waiting',joinUrl:'https://youtube.com/live/L5wjyA52hyE'};avatarFailure=true;
  const faultStorage=new Storage(),faultBot=new StreamBot({storage:faultStorage},env);
  await faultStorage.put('sub:77',{chatId:77,subscribedAt:REMINDER-1,day:'pending',live:'pending'});
  const tickResult=await faultBot.fetch(new Request('https://internal/tick',{method:'POST'}));assert.equal(tickResult.status,200,'profile problem does not block reminder scheduler');
@@ -80,7 +82,8 @@ try{
  outcome='bad_cached_photo';await mediaBot.send(88,'Refresh the rejected cached cover',undefined,false,'welcome');assert.equal(photoUploads,beforeMedia+2);assert(sent.at(-1).multipart);
  assetFailure=true;await mediaBot.send(88,'Text survives a missing image',undefined,false,'hour');assert.equal(sent.at(-1).method,'sendMessage');assetFailure=false;
  const beforeAmbiguous=sent.length;outcome='timeout';const uncertain=await mediaBot.send(88,'No duplicate after unknown photo outcome',undefined,false,'welcome');assert(uncertain.uncertain);assert.equal(sent.length,beforeAmbiguous+1);outcome='ok';
- assert(validMeet('https://meet.google.com/abc-defg-hij'));assert(!validMeet('https://meet.google.com.evil.test/abc-defg-hij'));
+ assert(validStreamUrl('https://youtube.com/live/L5wjyA52hyE'));assert(!validStreamUrl('https://youtube.com.evil.test/live/L5wjyA52hyE'));
+ for(const bad of ['https://meet.google.com/abc-defg-hij','https://youtube.com/live/short','https://youtube.com@evil.test/live/L5wjyA52hyE','http://youtube.com/live/L5wjyA52hyE','javascript:alert(1)'])assert(!validStreamUrl(bad));
  console.log('PASS: protected webhook, body limit, private-chat consent, restart-safe dedup, scheduled reminder, late subscription, verified live link, unsubscribe, retry, ambiguous-send suppression, batch continuation, data expiry and automatic setup.');
 }finally{Date.now=realNow;globalThis.fetch=realFetch;}
 
