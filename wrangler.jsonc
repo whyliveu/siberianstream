@@ -10,8 +10,8 @@
   },
   "vars": {
     "BOT_USERNAME": "mashkasad_streambot",
-    "SITE_URL": "https://whyliveu.github.io/siberianstream/",
-    "STATUS_URL": "https://whyliveu.github.io/siberianstream/status.json",
+    "SITE_URL": "https://mashkasad.online/",
+    "STATUS_URL": "https://mashkasad.online/status.json",
     "WEBHOOK_URL": "https://siberianstream.7marias5.workers.dev/api/telegram/webhook"
   },
   "durable_objects": {
