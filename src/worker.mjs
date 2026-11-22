@@ -92,16 +92,18 @@ export class StreamBot {
    const commands=await telegram(this.env,'setMyCommands',{commands:[{command:'start',description:'Напомнить о Сибирском стриме'},{command:'stop',description:'Отписаться от напоминаний'},{command:'help',description:'Как это работает'}]});
    if(!commands.ok)throw new Error('commands_setup_failed');
   }
-  if(old?.fingerprint!==fingerprint||old?.profileVersion!==PROFILE_VERSION){
+  let profileVersion=old?.profileVersion,profileError;
+  if(old?.fingerprint!==fingerprint||old?.profileVersion!==PROFILE_VERSION){try{
    const changes=[['setMyName',{name:'Сибирский стрим 27nov'}],['setMyDescription',{description:'Йоу! 27 ноября в 17:00 по МСК — Сибирский стрим с Никой, Саяном и Антоном Гладковым. Брейк, морозная хип-хоп-культура и три футболки за самые интересные вопросы в лайве)\n\nЖми «Старт» — напомню за сутки, за час и пришлю ссылку, когда начнём.'}],['setMyShortDescription',{short_description:'27 ноября · 17:00 МСК. Ника, Саян и Антон Гладков. Напоминания и ссылка на Сибирский стрим.'}]];
    for(const [method,body]of changes){if(!(await telegram(this.env,method,body)).ok)throw new Error('profile_'+method+'_failed');}
    const asset=await this.env.ASSETS.fetch(new Request(new URL('/assets/stream-bot-star-v1.jpg',webhook)));
    if(!asset.ok||!asset.headers.get('content-type')?.startsWith('image/jpeg'))throw new Error('profile_asset_unavailable');
    const photo=new FormData();photo.set('photo',JSON.stringify({type:'static',photo:'attach://avatar'}));photo.set('avatar',new Blob([await asset.arrayBuffer()],{type:'image/jpeg'}),'stream-avatar.jpg');
    if(!(await telegram(this.env,'setMyProfilePhoto',photo)).ok)throw new Error('profile_photo_failed');
-  }
-  await this.ctx.storage.put('setup',{fingerprint,url:webhook,verifiedAt:Date.now(),profileVersion:PROFILE_VERSION});
-  await this.ctx.storage.delete('setup-error');
+   profileVersion=PROFILE_VERSION;
+  }catch(error){profileError=/^[a-zA-Z_]{1,80}$/.test(error.message)?error.message:'profile_setup_failed';}}
+  await this.ctx.storage.put('setup',{fingerprint,url:webhook,verifiedAt:Date.now(),profileVersion});
+  if(profileError)await this.ctx.storage.put('setup-error',profileError);else await this.ctx.storage.delete('setup-error');
  }
  async status(){
   const cached=await this.ctx.storage.get('stream-status');if(cached?.at>Date.now()-10000)return cached.value;
