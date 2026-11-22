@@ -5,9 +5,11 @@ export const HOUR_REMINDER = START - 3600000;
 const DAY_REMINDER_END = Date.parse('2026-11-27T00:00:00+03:00');
 const PROFILE_VERSION = 'star-27nov-v1';
 const DONATION_URL = 'https://www.donationalerts.com/r/mashkasad';
+const MESSAGE_MEDIA = {welcome:'/assets/tg-stream-date-v1.jpg',day:'/assets/tg-stream-day-v1.jpg',hour:'/assets/tg-stream-hour-v1.jpg',live:'/assets/tg-stream-live-v1.jpg'};
+const MEDIA_VERSION = 'photo-cards-v1';
 export const COPY = {
- day: 'Йоу! Завтра, <b>27 ноября в 17:00 по МСК</b>, встречаемся на Сибирском стриме с Никой, Саяном и Антоном Гладковым.\n\nПоболтаем про брейк, Сибирь и то, как из маленького зала вырастают большие истории)\n\nКстати, в лайве выберем <b>три самых интересных вопроса</b>. Их авторам доставим домой <b>футболки In Da Motion с росписью Ники и Саяна</b>. Так что готовь вопросы)\n\nЗавтра связь!',
- hour: 'Йоу, <b>через час начинаем!</b>\n\nВ 17:00 по МСК — Сибирский стрим с Никой, Саяном и Антоном Гладковым.\n\nГотовь вопросы, скоро пришлю ссылку в комнату)',
+ day: 'Йоу! Завтра, <b>27 ноября в 17:00 по МСК</b>, встречаемся на Сибирском стриме с Никой, Саяном и Антоном Гладковым.\n\nБудем расспрашивать про брейк и эту морозную хип-хоп-культуру)\n\nКстати, в лайве выберем <b>три самых интересных вопроса</b>. Их авторам доставим домой <b>футболки In Da Motion с росписью Ники и Саяна</b>. Так что готовь вопросы)\n\nЗавтра связь!',
+ hour: 'Йоу, <b>начинаем через час!</b>\n\nСегодня, <b>27 ноября в 17:00 по МСК</b>, — Сибирский стрим с Никой, Саяном и Антоном Гладковым.\n\nГотовь вопросы, скоро пришлю ссылку в комнату)',
  live: 'Йоу, <b>мы начали!</b>\n\nНика, Саян, Антон и я уже в комнате. Залетай)\n\nКамеру и микрофон оставь выключенными, а вопросы кидай в чат. Авторам трёх самых интересных — футболки с росписью Ники и Саяна!'
 };
 export function welcomeText(now) {
@@ -35,8 +37,8 @@ async function telegram(env, method, body) {
   const r=await fetch('https://api.telegram.org/bot'+env.TELEGRAM_BOT_TOKEN+'/'+method,{method:'POST',headers:multipart?undefined:{'Content-Type':'application/json'},body:multipart?body:JSON.stringify(body),signal:AbortSignal.timeout(8000)});
   const data=await r.json();
   if(r.ok&&data.ok)return {ok:true,result:data.result};
-  return {ok:false,blocked:data.error_code===403,retry:data.error_code===429?Math.max(1,Number(data.parameters?.retry_after)||30):60};
- } catch { return {ok:false,uncertain:method==='sendMessage',retry:60}; }
+  return {ok:false,code:data.error_code,blocked:data.error_code===403,retry:data.error_code===429?Math.max(1,Number(data.parameters?.retry_after)||30):60};
+ } catch { return {ok:false,uncertain:method==='sendMessage'||method==='sendPhoto',retry:60}; }
 }
 function core(env) {return env.STREAM_BOT.get(env.STREAM_BOT.idFromName(EVENT));}
 export default {
@@ -70,7 +72,7 @@ export class StreamBot {
  serial(fn){const result=this.pending.then(fn);this.pending=result.catch(()=>{});return result;}
  fetch(request){return this.serial(async()=>{
   const path=new URL(request.url).pathname;
-  if(path==='/health'){const setup=await this.ctx.storage.get('setup');const fingerprint=await webhookSecret(this.env.TELEGRAM_BOT_TOKEN);return json({ready:setup?.fingerprint===fingerprint&&setup?.verifiedAt>Date.now()-600000,username:this.env.BOT_USERNAME,profileReady:setup?.profileVersion===PROFILE_VERSION,reminders:['day','hour','live'],error:await this.ctx.storage.get('setup-error')});}
+  if(path==='/health'){const setup=await this.ctx.storage.get('setup');const fingerprint=await webhookSecret(this.env.TELEGRAM_BOT_TOKEN);return json({ready:setup?.fingerprint===fingerprint&&setup?.verifiedAt>Date.now()-600000,username:this.env.BOT_USERNAME,profileReady:setup?.profileVersion===PROFILE_VERSION,mediaVersion:MEDIA_VERSION,reminders:['day','hour','live'],error:await this.ctx.storage.get('setup-error')});}
   if(path==='/update')return this.update(await request.json());
   if(path==='/tick'){try{await this.configure();await this.tick();return json({ok:true});}catch(error){const reason=/^[a-zA-Z_]{1,80}$/.test(error.message)?error.message:'temporarily_unavailable';await this.ctx.storage.put('setup-error',reason);return json({ok:false,error:reason},503);}}
   return json({error:'not_found'},404);
@@ -111,10 +113,27 @@ export class StreamBot {
   const value=await r.json();if(!['waiting','live','ended'].includes(value.state)||(value.state==='live'&&!validMeet(value.joinUrl)))throw new Error('invalid_stream_status');
   await this.ctx.storage.put('stream-status',{at:Date.now(),value});return value;
  }
- async send(chatId,text,joinUrl,support=false){
+ async send(chatId,text,joinUrl,support=false,mediaKind=null){
   const site=this.env.SITE_URL||DEFAULT_SITE;
   const buttons=[[{text:joinUrl?'Подключиться к стриму':'Открыть приглашение',url:joinUrl||site}]];
   if(support)buttons.push([{text:'Поддержать любовью в рублях',url:DONATION_URL}]);
+  const path=MESSAGE_MEDIA[mediaKind];
+  if(path&&text.length<=1024){
+   const cacheKey='photo:'+path,cached=await this.ctx.storage.get(cacheKey);
+   if(cached){
+    const result=await telegram(this.env,'sendPhoto',{chat_id:chatId,photo:cached,caption:text,parse_mode:'HTML',reply_markup:{inline_keyboard:buttons}});
+    if(result.ok||result.code!==400)return result;
+    await this.ctx.storage.delete(cacheKey);
+   }
+   let asset;try{asset=await this.env.ASSETS.fetch(new Request(new URL(path,this.env.WEBHOOK_URL)));}catch{return this.send(chatId,text,joinUrl,support);}
+   if(!asset.ok||!asset.headers.get('content-type')?.startsWith('image/jpeg'))return this.send(chatId,text,joinUrl,support);
+   const form=new FormData();form.set('chat_id',String(chatId));form.set('caption',text);form.set('parse_mode','HTML');form.set('reply_markup',JSON.stringify({inline_keyboard:buttons}));form.set('photo',new Blob([await asset.arrayBuffer()],{type:'image/jpeg'}),'stream-preview.jpg');
+   const result=await telegram(this.env,'sendPhoto',form);
+   if(result.ok){const id=result.result?.photo?.at(-1)?.file_id;if(id)await this.ctx.storage.put(cacheKey,id);return result;}
+   // An explicit media rejection can fall back to text. Never retry an ambiguous send.
+   if(result.code===400)return this.send(chatId,text,joinUrl,support);
+   return result;
+  }
   return telegram(this.env,'sendMessage',{chat_id:chatId,text,parse_mode:'HTML',link_preview_options:{is_disabled:true},reply_markup:{inline_keyboard:buttons}});
  }
  async update(input){
@@ -140,7 +159,7 @@ export class StreamBot {
   if(status.state==='live')sub.live='sent';
   await this.ctx.storage.put(key,sub);await this.ctx.storage.delete('stop:'+input.chatId);
   const text=status.state==='live'?'Мы уже в эфире! Ника, Саян, Антон и я — в комнате. Залетай с выключенными камерой и микрофоном) Вопросы — в чат.':welcomeText(now);
-  const result=await this.send(input.chatId,text,status.state==='live'?status.joinUrl:undefined,status.state!=='live');
+  const result=await this.send(input.chatId,text,status.state==='live'?status.joinUrl:undefined,status.state!=='live',status.state==='live'?'live':'welcome');
   if(result.blocked)await this.ctx.storage.delete(key);
   return json({ok:true});
  }
@@ -161,7 +180,7 @@ export class StreamBot {
    count++;
    // Claim before the external send. An ambiguous timeout stays uncertain rather than sending twice.
    sub[kind]='sending';await this.ctx.storage.put(key,sub);
-   const result=await this.send(sub.chatId,COPY[kind],kind==='live'?status.joinUrl:undefined);
+   const result=await this.send(sub.chatId,COPY[kind],kind==='live'?status.joinUrl:undefined,false,kind);
    if(result.blocked){await this.ctx.storage.delete(key);continue;}
    if(result.ok){sub[kind]='sent';delete sub.retryAt;}
    else if(result.uncertain){sub[kind]='uncertain';}

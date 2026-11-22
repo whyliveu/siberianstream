@@ -38,3 +38,15 @@ Configuration in `wrangler.jsonc` contains public settings only. `WEBHOOK_URL` s
 ## Checks
 
 `node --test tests/bot.test.mjs` runs meaningful mocked integration tests without any credentials or real Telegram messages. They cover webhook authentication, consent, retries, duplicate/out-of-order updates, reminder boundaries, real-start checks, late subscription, blocked/failed sends, batching, opt-out and expiry. A real Start/Stop test remains required after activation.
+
+
+## Message cover cards
+
+The Start reply and the three reminders are photo messages: the cover, HTML caption and inline buttons are sent in one Telegram message. All captions stay within Telegram's 1,024-character limit. Images are uploaded from the local static-assets binding, so a pending custom-domain DNS change cannot prevent their upload. Successful Telegram file IDs are reused. An explicitly rejected cached ID is refreshed; a missing image or an explicit media rejection falls back to text. Unknown sendPhoto outcomes are treated like unknown sendMessage outcomes and are not duplicated automatically.
+
+- Welcome: `dist/assets/tg-stream-date-v1.jpg` — event date 27 November, 17:00 Moscow.
+- Day before: `dist/assets/tg-stream-day-v1.jpg` — НАЧИНАЕМ ЧЕРЕЗ 24 ЧАСА.
+- Hour before: `dist/assets/tg-stream-hour-v1.jpg` — НАЧИНАЕМ ЧЕРЕЗ ЧАС; 27 November 16:00 is the reminder time, while the event starts at 17:00.
+- Verified live start: `dist/assets/tg-stream-live-v1.jpg` — LETS GO, with the actual room button.
+
+The four variants derive from Maria's approved stream poster; the website's main cover remains unchanged. Existing users are not sent an extra broadcast after an artwork update. Send `/start` again to see the new welcome card.

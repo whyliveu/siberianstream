@@ -10,10 +10,11 @@ class Storage {
  async deleteAll(){this.values.clear();}
 }
 const realNow=Date.now,realFetch=globalThis.fetch;
-let now=REMINDER-3600000,stream={state:'waiting',joinUrl:null},sent=[],outcome='ok',registration=0,profileUploads=0,avatarFailure=false;
+let now=REMINDER-3600000,stream={state:'waiting',joinUrl:null},sent=[],outcome='ok',registration=0,profileUploads=0,avatarFailure=false,photoUploads=0,assetFailure=false;
 Date.now=()=>now;
 globalThis.fetch=async(url,options)=>{
- if(String(url).includes('/sendMessage')){const body=JSON.parse(options.body);sent.push(body);if(outcome==='blocked')return Response.json({ok:false,error_code:403});if(outcome==='retry')return Response.json({ok:false,error_code:429,parameters:{retry_after:10}});if(outcome==='timeout')throw Error('private transport error');return Response.json({ok:true,result:{message_id:sent.length}});}
+ if(/\/(sendMessage|sendPhoto)$/.test(String(url))){const multipart=options.body instanceof FormData;const raw=multipart?Object.fromEntries(options.body):JSON.parse(options.body);const body={...raw,text:raw.text??raw.caption,reply_markup:typeof raw.reply_markup==='string'?JSON.parse(raw.reply_markup):raw.reply_markup,method:String(url).endsWith('/sendPhoto')?'sendPhoto':'sendMessage',multipart};sent.push(body);if(body.method==='sendPhoto'){assert(body.caption.length<=1024);if(multipart){assert(raw.photo instanceof Blob);assert.equal(options.headers,undefined);photoUploads++;}}
+ if(outcome==='blocked')return Response.json({ok:false,error_code:403});if(outcome==='retry')return Response.json({ok:false,error_code:429,parameters:{retry_after:10}});if(outcome==='timeout')throw Error('private transport error');if(outcome==='bad_cached_photo'&&body.method==='sendPhoto'&&!multipart){outcome='ok';return Response.json({ok:false,error_code:400});}return Response.json({ok:true,result:{message_id:sent.length,photo:body.method==='sendPhoto'?[{file_id:'reusable-photo-'+photoUploads}]:undefined}});}
  if(String(url).includes('/getMe'))return Response.json({ok:true,result:{username:'mashkasad_streambot'}});
  if(String(url).includes('/getWebhookInfo'))return Response.json({ok:true,result:{url:''}});
  if(String(url).includes('/setWebhook')){registration++;return Response.json({ok:true,result:true});}
@@ -22,7 +23,7 @@ globalThis.fetch=async(url,options)=>{
  if(/\/(setMyName|setMyDescription|setMyShortDescription)$/.test(String(url)))return Response.json({ok:true,result:true});
  return Response.json(stream);
 };
-const env={TELEGRAM_BOT_TOKEN:'12345:test-only-not-a-real-token',BOT_USERNAME:'mashkasad_streambot',SITE_URL:'https://example.org/',STATUS_URL:'https://example.org/status.json',WEBHOOK_URL:'https://example.org/api/telegram/webhook',ASSETS:{fetch:async request=>new URL(request.url).pathname.endsWith('.jpg')?new Response(new Uint8Array([255,216,255,217]),{headers:{'Content-Type':'image/jpeg'}}):new Response('static invitation')}};
+const env={TELEGRAM_BOT_TOKEN:'12345:test-only-not-a-real-token',BOT_USERNAME:'mashkasad_streambot',SITE_URL:'https://example.org/',STATUS_URL:'https://example.org/status.json',WEBHOOK_URL:'https://example.org/api/telegram/webhook',ASSETS:{fetch:async request=>new URL(request.url).pathname.endsWith('.jpg')?assetFailure?new Response('Missing',{status:404}):new Response(new Uint8Array([255,216,255,217]),{headers:{'Content-Type':'image/jpeg'}}):new Response('static invitation')}};
 const storage=new Storage(),bot=new StreamBot({storage},env);env.STREAM_BOT={idFromName:x=>x,get:()=>({fetch:r=>bot.fetch(r)})};
 const update=(id,chatId=1,text='/start')=>bot.fetch(new Request('https://internal/update',{method:'POST',body:JSON.stringify({id,chatId,text})}));
 try{
@@ -36,6 +37,7 @@ try{
  await webhook({update_id:1,message:{chat:{id:1,type:'private'},text:'/start sibirskiy-strim-2026-11-27'}});
  assert.equal(sent.length,1);assert((await storage.get('sub:1')).subscribedAt<REMINDER);
  assert(sent[0].text.includes('Шарик крутится быстро'));assert(sent[0].text.includes('за день и за час'));assert.equal(sent[0].parse_mode,'HTML');assert.equal(sent[0].reply_markup.inline_keyboard[1][0].url,'https://www.donationalerts.com/r/mashkasad');
+ assert.equal(sent[0].method,'sendPhoto');assert(sent[0].multipart,'first cover uploaded with caption and buttons');
  await update(1);assert.equal(sent.length,1,'duplicate webhook suppressed');
  await webhook({update_id:2,message:{chat:{id:50,type:'group'},text:'/start'}});assert.equal(await storage.get('sub:50'),undefined);
  const oversize=await worker.fetch(new Request('https://example.org/api/telegram/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':secret},body:'x'.repeat(20000)}),env);assert.equal(oversize.status,400);
@@ -71,6 +73,13 @@ try{
  const tickResult=await faultBot.fetch(new Request('https://internal/tick',{method:'POST'}));assert.equal(tickResult.status,200,'profile problem does not block reminder scheduler');
  assert.equal((await faultStorage.get('sub:77')).day,'sent');const faultHealth=await(await faultBot.fetch(new Request('https://internal/health'))).json();assert(faultHealth.ready);assert(!faultHealth.profileReady);assert.equal(faultHealth.error,'profile_photo_failed');
  avatarFailure=false;await faultBot.configure();assert.equal((await(await faultBot.fetch(new Request('https://internal/health'))).json()).profileReady,true);
+ // Reuse each cover by Telegram file_id; refresh an explicitly rejected ID safely.
+ const mediaStorage=new Storage(),mediaBot=new StreamBot({storage:mediaStorage},env);
+ const beforeMedia=photoUploads;await mediaBot.send(88,'A welcome',undefined,false,'welcome');assert.equal(photoUploads,beforeMedia+1);
+ await mediaBot.send(88,'Another welcome',undefined,false,'welcome');assert.equal(photoUploads,beforeMedia+1);assert(!sent.at(-1).multipart);
+ outcome='bad_cached_photo';await mediaBot.send(88,'Refresh the rejected cached cover',undefined,false,'welcome');assert.equal(photoUploads,beforeMedia+2);assert(sent.at(-1).multipart);
+ assetFailure=true;await mediaBot.send(88,'Text survives a missing image',undefined,false,'hour');assert.equal(sent.at(-1).method,'sendMessage');assetFailure=false;
+ const beforeAmbiguous=sent.length;outcome='timeout';const uncertain=await mediaBot.send(88,'No duplicate after unknown photo outcome',undefined,false,'welcome');assert(uncertain.uncertain);assert.equal(sent.length,beforeAmbiguous+1);outcome='ok';
  assert(validMeet('https://meet.google.com/abc-defg-hij'));assert(!validMeet('https://meet.google.com.evil.test/abc-defg-hij'));
  console.log('PASS: protected webhook, body limit, private-chat consent, restart-safe dedup, scheduled reminder, late subscription, verified live link, unsubscribe, retry, ambiguous-send suppression, batch continuation, data expiry and automatic setup.');
 }finally{Date.now=realNow;globalThis.fetch=realFetch;}
